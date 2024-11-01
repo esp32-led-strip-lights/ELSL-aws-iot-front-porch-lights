@@ -9,29 +9,25 @@
 #include "gecl-mqtt-manager.h"
 #include "gecl-nvs-manager.h"
 #include "gecl-ota-manager.h"
-#include "gecl-rgb-led-manager.h"
 #include "gecl-time-sync-manager.h"
 #include "gecl-wifi-manager.h"
+#include "gecl-bh1750-light-sensor-manager.h"
 #include "mbedtls/debug.h" // Add this to include mbedtls debug functions
-#include "mp3.h"           // Include the mp3 header
 #include "nvs_flash.h"
-
-#define ORPHAN_TIMEOUT pdMS_TO_TICKS(7200000) // 2 hours in milliseconds
 
 static const char *TAG = "PORCH_LIGHTS";
 const char *device_name = CONFIG_WIFI_HOSTNAME;
 
 TaskHandle_t ota_task_handle = NULL; // Task handle for OTA updating
-TimerHandle_t orphan_timer = NULL;
 
 esp_mqtt_client_handle_t mqtt_client_handle = NULL;
 
 char mac_address[18];
 
-extern const uint8_t coop_snooper_test_certificate_pem[];
-extern const uint8_t coop_snooper_test_private_pem_key[];
-const uint8_t *cert = coop_snooper_test_certificate_pem;
-const uint8_t *key = coop_snooper_test_private_pem_key;
+extern const uint8_t certificate[];
+extern const uint8_t private_key[];
+const uint8_t *cert = certificate;
+const uint8_t *key = private_key;
 
 void error_stop_mqtt(esp_mqtt_client_handle_t mqtt_client)
 {
@@ -115,45 +111,14 @@ void record_local_mac_address(char *mac_str)
     }
 }
 
-// Callback function for timer expiration
-void orphan_timer_callback(TimerHandle_t xTimer)
-{
-    ESP_LOGE(TAG, "No status message received for 2 hours. Triggering reboot!");
-    error_reload();
-}
-
-// Function to reset the timer whenever a message is received
-void reset_orphan_timer(void)
-{
-    if (xTimerReset(orphan_timer, 0) != pdPASS)
-    {
-        ESP_LOGE(TAG, "Orphan timer failed to reset");
-        error_reload();
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Orphan timer reset successfully");
-    }
-}
-
 void custom_handle_mqtt_event_connected(esp_mqtt_event_handle_t event)
 {
     esp_mqtt_client_handle_t client = event->client;
     ESP_LOGI(TAG, "Custom handler: MQTT_EVENT_CONNECTED");
     int msg_id;
 
-    msg_id = esp_mqtt_client_subscribe(client, CONFIG_MQTT_SUBSCRIBE_STATUS_TOPIC, 0);
-    ESP_LOGI(TAG, "Subscribed to topic %s, msg_id=%d", CONFIG_MQTT_SUBSCRIBE_STATUS_TOPIC, msg_id);
-
-    msg_id = esp_mqtt_client_subscribe(client, CONFIG_MQTT_SUBSCRIBE_OTA_UPDATE_SNOOPER_TOPIC, 0);
-    ESP_LOGI(TAG, "Subscribed to topic %s, msg_id=%d", CONFIG_MQTT_SUBSCRIBE_OTA_UPDATE_SNOOPER_TOPIC, msg_id);
-
-    msg_id = esp_mqtt_client_subscribe(client, CONFIG_MQTT_SUBSCRIBE_SELF_TEST_SNOOPER_TOPIC, 0);
-    ESP_LOGI(TAG, "Subscribed to topic %s, msg_id=%d", CONFIG_MQTT_SUBSCRIBE_SELF_TEST_SNOOPER_TOPIC, msg_id);
-
-    msg_id =
-        esp_mqtt_client_publish(client, CONFIG_MQTT_PUBLISH_STATUS_TOPIC, "{\"message\":\"status_request\"}", 0, 0, 0);
-    ESP_LOGI(TAG, "Published initial status request, msg_id=%d", msg_id);
+    msg_id = esp_mqtt_client_subscribe(client, CONFIG_MQTT_SUBSCRIBE_OTA_UPDATE_PORCH_LIGHTS_TOPIC, 0);
+    ESP_LOGI(TAG, "Subscribed to topic %s, msg_id=%d", CONFIG_MQTT_SUBSCRIBE_OTA_UPDATE_PORCH_LIGHTS_TOPIC, msg_id);
 }
 
 void custom_handle_mqtt_event_disconnected(esp_mqtt_event_handle_t event)
@@ -196,30 +161,6 @@ void custom_handle_mqtt_event_disconnected(esp_mqtt_event_handle_t event)
     {
         ESP_LOGE(TAG, "Network not connected, skipping MQTT reconnection");
         error_reload();
-    }
-}
-
-void custom_handle_mqtt_event_subscribe(esp_mqtt_event_handle_t event)
-{
-    // Handle the status response
-    cJSON *json = cJSON_Parse(event->data);
-    if (json == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to parse JSON");
-    }
-    else
-    {
-        cJSON *state = cJSON_GetObjectItem(json, "LED");
-        const char *led_state = cJSON_GetStringValue(state);
-        assert(led_state != NULL);
-        set_rgb_led_named_color(led_state);
-
-        // Check if the led_state does not contain "GREEN" but contains "BLINK"
-        if (strstr(led_state, "GREEN") == NULL && strstr(led_state, "BLINK") != NULL)
-        {
-            squawk(); // Call squawk if the condition is met
-        }
-        cJSON_Delete(json);
     }
 }
 
@@ -297,10 +238,7 @@ void custom_handle_mqtt_event_data(esp_mqtt_event_handle_t event)
 
     ESP_LOGW(TAG, "Received topic %.*s", event->topic_len, event->topic);
 
-    // Reset the orphan timer whenever a message is received
-    reset_orphan_timer();
-
-    if (strncmp(event->topic, CONFIG_MQTT_SUBSCRIBE_OTA_UPDATE_SNOOPER_TOPIC, event->topic_len) == 0)
+    if (strncmp(event->topic, CONFIG_MQTT_SUBSCRIBE_OTA_UPDATE_PORCH_LIGHTS_TOPIC, event->topic_len) == 0)
     {
         // Use the global mac_address variable to pass the MAC address to the OTA function
         custom_handle_mqtt_event_ota(event, mac_address);
@@ -350,22 +288,6 @@ void app_main(void)
     mqtt_config_t config = {.certificate = cert, .private_key = key, .broker_uri = CONFIG_AWS_IOT_ENDPOINT};
 
     mqtt_client_handle = init_mqtt(&config);
-
-    // Create an orphan timer to trigger a notification if no message is received for 2 hours
-    orphan_timer = xTimerCreate("orphan_timer", ORPHAN_TIMEOUT, pdFALSE, (void *)0, orphan_timer_callback);
-
-    if (orphan_timer == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to create notification timer");
-        error_reload();
-    }
-
-    // Start the timer when the system boots
-    if (xTimerStart(orphan_timer, 0) != pdPASS)
-    {
-        ESP_LOGE(TAG, "Failed to start notification timer");
-        error_reload();
-    }
 
     // Infinite loop to prevent exiting app_main
     while (true)

@@ -21,9 +21,8 @@ file(GLOB_RECURSE COMPONENT_SOURCES "components/*/*.c")
 file(GLOB_RECURSE COMPONENT_INCLUDES "components/*/include")
 
 set(AWS_SOURCE "certs/src/AmazonRootCA1_pem.c")
-
-set(GLOB_RECURSE CERT_SOURCE "certs/src/*pem.c")
-set(GLOB_RECURSE KEY_SOURCE "certs/src/*key.c")
+set(CERT_SOURCE "certs/src/certificate.c")
+set(KEY_SOURCE "certs/src/private_key.c")
 
 idf_component_register(
     SRCS 
@@ -51,4 +50,5 @@ idf_component_register(
         gecl-mqtt-manager
         gecl-misc-util-manager
         gecl-bh1750-light-sensor-manager
+        gecl-nvs-manager
 )
