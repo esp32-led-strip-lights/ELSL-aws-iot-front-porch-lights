@@ -1,0 +1,47 @@
+dependencies:
+  espressif/cmake_utilities:
+    component_hash: 351350613ceafba240b761b4ea991e0f231ac7a9f59a9ee901f751bddc0bb18f
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.1'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.5.3
+  espressif/i2c_bus:
+    component_hash: 3a63d52b437d4456b74c9112732427ebb3bc8cd630da916866582ce51f68cc79
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com/
+      require: private
+      version: 0.*
+    - name: idf
+      require: private
+      version: '>=4.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.0
+  espressif/led_strip:
+    component_hash: 28c6509a727ef74925b372ed404772aeedf11cce10b78c3f69b3c66799095e2d
+    dependencies:
+    - name: idf
+      registry_url: https://components.espressif.com
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.5.5
+  idf:
+    source:
+      type: idf
+    version: 5.2.2
+direct_dependencies:
+- espressif/i2c_bus
+- espressif/led_strip
+- idf
+manifest_hash: a7d9d1b34cb01ca76f6ea8160ff3bc841a3fc76e9c2a3957ab82fd87f2214f3e
+target: esp32c3
+version: 2.0.0
