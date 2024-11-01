@@ -23,3 +23,6 @@
 [submodule "components/gecl-bh1750-light-sensor-manager"]
 	path = components/gecl-bh1750-light-sensor-manager
 	url = https://github.com/gamename-esp32-component-library/GECL-bh1750-light-sensor-manager
+[submodule "components/gecl-misc-util-manager"]
+	path = components/gecl-misc-util-manager
+	url = https://github.com/gamename-esp32-component-library/GECL-misc-util-manager
