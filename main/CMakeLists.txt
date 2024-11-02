@@ -20,7 +20,7 @@ file(GLOB_RECURSE COMPONENT_SOURCES "components/*/*.c")
 
 file(GLOB_RECURSE COMPONENT_INCLUDES "components/*/include")
 
-set(AWS_SOURCE "certs/src/AmazonRootCA1_pem.c")
+set(AWS_SOURCE "certs/src/root_ca.c")
 set(CERT_SOURCE "certs/src/certificate.c")
 set(KEY_SOURCE "certs/src/private_key.c")
 
@@ -43,12 +43,14 @@ idf_component_register(
         driver 
         esp_wifi 
         json
+        unity
+        i2c_bus
+        bh1750
     PRIV_REQUIRES 
         gecl-ota-manager
         gecl-wifi-manager
         gecl-time-sync-manager
         gecl-mqtt-manager
         gecl-misc-util-manager
-        gecl-bh1750-light-sensor-manager
         gecl-nvs-manager
 )

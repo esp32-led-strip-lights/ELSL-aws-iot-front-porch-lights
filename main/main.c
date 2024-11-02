@@ -11,9 +11,16 @@
 #include "gecl-ota-manager.h"
 #include "gecl-time-sync-manager.h"
 #include "gecl-wifi-manager.h"
-#include "gecl-bh1750-light-sensor-manager.h"
 #include "mbedtls/debug.h" // Add this to include mbedtls debug functions
 #include "nvs_flash.h"
+#include "unity.h"
+#include "driver/i2c.h"
+#include "bh1750.h"
+
+#define I2C_MASTER_SDA_IO 8       /*!< gpio number for I2C master data  */
+#define I2C_MASTER_SCL_IO 9       /*!< gpio number for I2C master clock */
+#define I2C_MASTER_NUM I2C_NUM_0  /*!< I2C port number for master dev */
+#define I2C_MASTER_FREQ_HZ 100000 /*!< I2C master clock frequency */
 
 static const char *TAG = "PORCH_LIGHTS";
 const char *device_name = CONFIG_WIFI_HOSTNAME;
@@ -22,12 +29,16 @@ TaskHandle_t ota_task_handle = NULL; // Task handle for OTA updating
 
 esp_mqtt_client_handle_t mqtt_client_handle = NULL;
 
+static bh1750_handle_t bh1750 = NULL;
+
 char mac_address[18];
 
 extern const uint8_t certificate[];
 extern const uint8_t private_key[];
+extern const uint8_t root_ca[];
 const uint8_t *cert = certificate;
 const uint8_t *key = private_key;
+const uint8_t *ca = root_ca;
 
 void error_stop_mqtt(esp_mqtt_client_handle_t mqtt_client)
 {
@@ -271,6 +282,9 @@ void custom_handle_mqtt_event_error(esp_mqtt_event_handle_t event)
 
 void app_main(void)
 {
+    bh1750_measure_mode_t cmd_measure;
+    float bh1750_data;
+
     init_nvs();
 
     init_wifi();
@@ -285,13 +299,44 @@ void app_main(void)
     mqtt_set_event_data_handler(custom_handle_mqtt_event_data);
     mqtt_set_event_error_handler(custom_handle_mqtt_event_error);
 
-    mqtt_config_t config = {.certificate = cert, .private_key = key, .broker_uri = CONFIG_AWS_IOT_ENDPOINT};
+    mqtt_config_t config = {.certificate = cert,
+                            .private_key = key,
+                            .root_ca = ca,
+                            .broker_uri = CONFIG_AWS_IOT_ENDPOINT};
 
     mqtt_client_handle = init_mqtt(&config);
+
+    i2c_config_t conf;
+    conf.mode = I2C_MODE_MASTER;
+    conf.sda_io_num = (gpio_num_t)I2C_MASTER_SDA_IO;
+    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.scl_io_num = (gpio_num_t)I2C_MASTER_SCL_IO;
+    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
+    conf.clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL;
+
+    esp_err_t ret = i2c_param_config(I2C_MASTER_NUM, &conf);
+    TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, ret, "I2C config returned error");
+
+    ret = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
+    TEST_ASSERT_EQUAL_MESSAGE(ESP_OK, ret, "I2C install returned error");
+
+    bh1750 = bh1750_create(I2C_MASTER_NUM, BH1750_I2C_ADDRESS_DEFAULT);
+    TEST_ASSERT_NOT_NULL_MESSAGE(bh1750, "BH1750 create returned NULL");
+
+    bh1750_power_on(bh1750);
+    cmd_measure = BH1750_CONTINUE_4LX_RES;
 
     // Infinite loop to prevent exiting app_main
     while (true)
     {
+        ret = bh1750_set_measure_mode(bh1750, cmd_measure);
+        TEST_ASSERT_EQUAL(ESP_OK, ret);
+        vTaskDelay(30 / portTICK_PERIOD_MS);
+
+        ret = bh1750_get_data(bh1750, &bh1750_data);
+        TEST_ASSERT_EQUAL(ESP_OK, ret);
+        ESP_LOGI(TAG, "bh1750 val(continuously mode): %f\n", bh1750_data);
         vTaskDelay(pdMS_TO_TICKS(1000)); // Delay to allow other tasks to run
     }
 }

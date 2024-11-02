@@ -1,5 +1,6 @@
 ## IDF Component Manager Manifest File
 dependencies:
+  espressif/bh1750: "^1.0.3"
   espressif/i2c_bus: "=*"
   espressif/led_strip: "^2.5.4"
   ## Required IDF version
